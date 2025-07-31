@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from supabase.client import create_client, Client
 import json
+import pickle
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +71,19 @@ class DatabaseManager:
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat()
             }
+            
+            # Serializa objetos complexos para JSON
+            for key, value in insert_data.items():
+                if isinstance(value, (dict, list)):
+                    try:
+                        # Tenta serializar para JSON
+                        json.dumps(value, ensure_ascii=False)
+                    except (TypeError, ValueError):
+                        # Se falhar, converte para string
+                        insert_data[key] = str(value)
+                elif hasattr(value, '__dict__'):
+                    # Converte objetos para dict
+                    insert_data[key] = value.__dict__
             
             # Remove campos None
             insert_data = {k: v for k, v in insert_data.items() if v is not None}
