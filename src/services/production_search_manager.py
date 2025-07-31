@@ -339,17 +339,6 @@ class ProductionSearchManager:
                 self.providers[provider]['enabled'] = False
                 return []
             
-            # Valida chaves
-            if len(api_key) < 30 or not api_key.startswith('AIza'):
-                logger.error("❌ GOOGLE_SEARCH_KEY parece inválida")
-                self.providers[provider]['enabled'] = False
-                return []
-            
-            if ':' not in cse_id or len(cse_id) < 20:
-                logger.error("❌ GOOGLE_CSE_ID parece inválido")
-                self.providers[provider]['enabled'] = False
-                return []
-            
             url = "https://www.googleapis.com/customsearch/v1"
             params = {
                 'key': api_key,
@@ -809,18 +798,43 @@ class ProductionSearchManager:
         # Limita resultados
         final_results = unique_results[:max_results]
         
-        # Salva no cache se obteve resultados
-        if final_results:
-            self.cache.set(query, final_results, "combined")
+        # Converte SearchResult para dict se necessário
+        dict_results = []
+        for result in final_results:
+            if hasattr(result, '__dict__'):
+                dict_results.append({
+                    'title': result.title,
+                    'url': result.url,
+                    'snippet': result.snippet,
+                    'source': result.source,
+                    'relevance_score': getattr(result, 'relevance_score', 0.0),
+                    'timestamp': result.timestamp.isoformat() if hasattr(result, 'timestamp') and result.timestamp else datetime.now().isoformat()
+                })
+            else:
+                dict_results.append(result)
         
-        logger.info(f"🎯 Busca final: {len(final_results)} resultados únicos de {len(successful_providers)} provedores")
+        # Salva no cache se obteve resultados
+        if dict_results:
+            # Converte para SearchResult para cache
+            cache_results = []
+            for result_dict in dict_results:
+                cache_result = SearchResult(
+                    title=result_dict['title'],
+                    url=result_dict['url'],
+                    snippet=result_dict['snippet'],
+                    source=result_dict['source']
+                )
+                cache_results.append(cache_result)
+            self.cache.set(query, cache_results, "combined")
+        
+        logger.info(f"🎯 Busca final: {len(dict_results)} resultados únicos de {len(successful_providers)} provedores")
         
         # Limpeza periódica do cache
         if time.time() - self.last_cleanup > 3600:  # 1 hora
             self.cache.cleanup_expired()
             self.last_cleanup = time.time()
         
-        return final_results
+        return dict_results
     
     def get_provider_status(self) -> Dict[str, Any]:
         """Retorna status detalhado dos provedores"""
